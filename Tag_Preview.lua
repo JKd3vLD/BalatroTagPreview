@@ -30,24 +30,29 @@ function Tag:load(tag_savetable)
 
   if tag_savetable.replace_card_table then
     local table = tag_savetable.replace_card_table
-    local card = create_joker_for_tag(nil, table.center_key, nil, table.edition, table.eternal, table.perishable,
-      table.rental
+    local card = joker_for_tag(nil, table.center_key, nil,
+      table.edition,
+      true,
+      table.eternal,
+      table.perishable,
+      table.rental,
+      true
     )
 
     self.replace_card = card
   end
 end
 
-function create_joker_for_tag(_rarity, _forced_key, _key_append, _edition, _eternal, _perishable, _rental)
+function joker_for_tag(rarity, forced_key, key_append, edition, load_edition, eternal, perishable, rental, load_sticker)
   local type = 'Joker'
   local center = G.P_CENTERS.j_joker
   local center_key = 'j_joker'
 
-  if _forced_key and not G.GAME.banned_keys[_forced_key] then
-    center = G.P_CENTERS[_forced_key]
+  if forced_key and not G.GAME.banned_keys[forced_key] then
+    center = G.P_CENTERS[forced_key]
     type = center.set or type
   else
-    local _pool, _pool_key = get_current_pool(type, _rarity, nil, _key_append)
+    local _pool, _pool_key = get_current_pool(type, rarity, nil, key_append)
     center_key = pseudorandom_element(_pool, pseudoseed(_pool_key))
     local it = 1
     while center_key == 'UNAVAILABLE' do
@@ -72,23 +77,37 @@ function create_joker_for_tag(_rarity, _forced_key, _key_append, _edition, _eter
   card.states.click.can = false
   card.states.visible = false
 
-  if _eternal or G.GAME.modifiers.all_eternal then
-    card:set_eternal(true)
-  else
-    if not _perishable and G.GAME.modifiers.enable_eternals_in_shop and pseudorandom('stake_shop_joker_eternal' .. G.GAME.round_resets.ante) > 0.7 then
+  if load_sticker then
+    if eternal then
       card:set_eternal(true)
-    elseif _perishable or G.GAME.modifiers.enable_perishables_in_shop and pseudorandom('ssjp' .. G.GAME.round_resets.ante) / 0.7 > 0.7 then
+    end
+    if perishable then
       card:set_perishable(true)
     end
-  end
-  if _rental or G.GAME.modifiers.enable_rentals_in_shop and pseudorandom('ssjr' .. G.GAME.round_resets.ante) > 0.7 then
-    card:set_rental(true)
+    if rental then
+      card:set_rental(true)
+    end
+  else
+    if G.GAME.modifiers.all_eternal then
+      card:set_eternal(true)
+    else
+      if G.GAME.modifiers.enable_eternals_in_shop and pseudorandom('stake_shop_joker_eternal' .. G.GAME.round_resets.ante) > 0.7 then
+        card:set_eternal(true)
+      elseif G.GAME.modifiers.enable_perishables_in_shop and pseudorandom('ssjp' .. G.GAME.round_resets.ante) / 0.7 > 0.7 then
+        card:set_perishable(true)
+      end
+    end
+    if G.GAME.modifiers.enable_rentals_in_shop and pseudorandom('ssjr' .. G.GAME.round_resets.ante) > 0.7 then
+      card:set_rental(true)
+    end
   end
 
-  if _edition then
-    card:set_edition(_edition, true, true)
+  if load_edition then
+    if edition then
+      card:set_edition(edition, true, true)
+    end
   else
-    local edition = poll_edition('edi' .. (_key_append or '') .. G.GAME.round_resets.ante)
+    local edition = poll_edition('edi' .. (key_append or '') .. G.GAME.round_resets.ante)
     card:set_edition(edition, true, true)
   end
 
@@ -114,9 +133,9 @@ function add_card_to_tag(tag)
   local card = nil
 
   if tag.name == 'Uncommon Tag' then
-    card = create_joker_for_tag(0.9, nil, 'utag', nil)
+    card = joker_for_tag(0.9, nil, 'utag')
   elseif tag.name == 'Rare Tag' then
-    card = create_joker_for_tag(1, nil, 'rtag', nil)
+    card = joker_for_tag(1, nil, 'rtag')
   else
     local edition = {}
 
@@ -130,12 +149,21 @@ function add_card_to_tag(tag)
       edition = { polychrome = true }
     end
 
-    card = create_joker_for_tag(nil, nil, 'etag', edition)
+    card = joker_for_tag(nil, nil, 'etag', edition, true)
   end
 
   tag.replace_card = card
 
   return tag
+end
+
+local add_tag_ref = add_tag
+function add_tag(_tag)
+  add_tag_ref(_tag)
+
+  if (_tag.name == 'Negative Tag' or _tag.name == 'Foil Tag' or _tag.name == 'Holographic Tag' or _tag.name == 'Polychrome Tag') then
+    G.tag_joker_edition_count = (G.tag_joker_edition_count or 0) + 1
+  end
 end
 
 local tag_apply_to_run_ref = Tag.apply_to_run
@@ -187,6 +215,8 @@ function Tag:apply_to_run(_context)
         card.ability.perishable = nil
         card.ability.rental = nil
 
+        card.ability.tag_joker = true
+
         if card_properties.eternal then
           card:set_eternal(card_properties.eternal)
         end
@@ -217,15 +247,21 @@ function Tag:apply_to_run(_context)
       return card
     elseif _context.type == 'store_joker_modify' then
       local _applied = nil
-      if not _context.card.edition and not _context.card.temp_edition and _context.card.ability.set == 'Joker' then
+      if not _context.card.ability.tag_joker and _context.card.edition then
+        _context.card.ability.j_has_edition = true
+      end
+      if not _context.card.ability.tag_joker and not _context.card.edition and not _context.card.temp_edition and _context.card.ability.set == 'Joker' then
         local lock = self.ID
         G.CONTROLLER.locks[lock] = true
+
+        _context.card.states.visible = false
 
         local card_properties = {
           eternal = nil,
           perishable = nil,
           rental = nil,
         }
+
         if (self.name == 'Foil Tag' or self.name == 'Holographic Tag' or self.name == 'Polychrome Tag' or self.name == 'Negative Tag') then
           if not self.replace_card then
             self = add_card_to_tag(self)
@@ -234,34 +270,28 @@ function Tag:apply_to_run(_context)
           card_properties.perishable = self.replace_card.ability.perishable
           card_properties.rental = self.replace_card.ability.rental
 
-          if _context.card.states.visible then
-            start_dissolve_no_remove(_context.card, { G.C.DARK_EDITION })
-            delay(0.3)
+          _context.card.temp_edition = true
+
+          _context.card.config = {
+            card = {},
+            center = self.replace_card.config.center
+          }
+          _context.card.ability = {}
+
+          _context.card:set_ability(self.replace_card.config.center, true)
+          _context.card:set_base(nil, true)
+
+          if card_properties.eternal then
+            _context.card:set_eternal(card_properties.eternal)
+          end
+          if card_properties.perishable then
+            _context.card:set_perishable(card_properties.perishable)
+          end
+          if card_properties.rental then
+            _context.card:set_rental(card_properties.rental)
           end
 
-          _context.card.states.visible = false
-
-          _context.card.temp_edition = true
           self:yep('+', G.C.DARK_EDITION, function()
-            _context.card.config = {
-              card = {},
-              center = self.replace_card.config.center
-            }
-            _context.card.ability = {}
-
-            _context.card:set_ability(self.replace_card.config.center, true)
-            _context.card:set_base(nil, true)
-
-            if card_properties.eternal then
-              _context.card:set_eternal(card_properties.eternal)
-            end
-            if card_properties.perishable then
-              _context.card:set_perishable(card_properties.perishable)
-            end
-            if card_properties.rental then
-              _context.card:set_rental(card_properties.rental)
-            end
-
             _context.card:start_materialize({ G.C.DARK_EDITION })
 
             if self.name == 'Foil Tag' then
@@ -281,6 +311,7 @@ function Tag:apply_to_run(_context)
             return true
           end)
           _applied = true
+          _context.card.ability.j_has_edition = nil
         end
         self.triggered = true
       end
@@ -438,8 +469,6 @@ function Tag:generate_UI(_size)
   -- local tag_sprite_hover_ref = tag_sprite.hover
 
   tag_sprite.hover = function(_self)
-    -- tag_sprite_hover_ref(_self)
-
     if not G.CONTROLLER.dragging.target or G.CONTROLLER.using_touch then
       if not _self.hovering and _self.states.visible then
         _self.hovering = true
@@ -492,55 +521,64 @@ function Tag:generate_UI(_size)
   return tag_sprite_tab, tag_sprite
 end
 
-function start_dissolve_no_remove(card, dissolve_colours, silent, dissolve_time_fac, no_juice)
-  local dissolve_time = 0.7 * (dissolve_time_fac or 1)
-  card.dissolve = 0
-  card.dissolve_colours = dissolve_colours
-      or { G.C.BLACK, G.C.ORANGE, G.C.RED, G.C.GOLD, G.C.JOKER_GREY }
-  if not no_juice then card:juice_up() end
-  local childParts = Particles(0, 0, 0, 0, {
-    timer_type = 'TOTAL',
-    timer = 0.01 * dissolve_time,
-    scale = 0.1,
-    speed = 2,
-    lifespan = 0.7 * dissolve_time,
-    attach = card,
-    colours = card.dissolve_colours,
-    fill = true
-  })
-  G.E_MANAGER:add_event(Event({
-    trigger = 'after',
-    blockable = false,
-    delay = 0.7 * dissolve_time,
-    func = (function()
-      childParts:fade(0.3 * dissolve_time)
-      return true
-    end)
-  }))
-  if not silent then
-    G.E_MANAGER:add_event(Event({
-      blockable = false,
-      func = (function()
-        play_sound('whoosh2', math.random() * 0.2 + 0.9, 0.5)
-        play_sound('crumple' .. math.random(1, 5), math.random() * 0.2 + 0.9, 0.5)
-        return true
-      end)
-    }))
+local create_card_for_shop_ref = create_card_for_shop
+function create_card_for_shop(area)
+  if not (area == G.shop_jokers and G.SETTINGS.tutorial_progress and G.SETTINGS.tutorial_progress.forced_shop and G.SETTINGS.tutorial_progress.forced_shop[#G.SETTINGS.tutorial_progress.forced_shop]) then
+    local forced_tag = nil
+    for _, v in ipairs(G.GAME.tags) do
+      if not forced_tag then
+        forced_tag = v:apply_to_run({ type = 'store_joker_create', area = area })
+        if forced_tag then
+          return forced_tag
+        end
+      end
+    end
+
+    G.tag_joker_edition_count = G.tag_joker_edition_count or 0
+
+    if G.tag_joker_edition_count > 0 then
+      local other_area = CardArea(
+        G.hand.T.x + 0,
+        G.hand.T.y + G.ROOM.T.y + 9,
+        G.CARD_W,
+        G.CARD_H,
+        { card_limit = 1, type = 'shop', highlight_limit = 0 }
+      )
+
+      other_area.states.visible = false
+
+      local card = create_card_for_shop_ref(other_area)
+
+      card.states.visible = false
+
+      card:set_card_area(area)
+      delay(0.2)
+
+      if card.ability.set == 'Joker' and not card.ability.tag_joker and not card.ability.j_has_edition and not card.edition then
+        G.tag_joker_edition_count = G.tag_joker_edition_count - 1
+      end
+
+      if G.tag_joker_edition_count <= 0 and G.state_just_loaded then
+        card:start_materialize()
+      end
+
+      return card
+    end
   end
-  G.E_MANAGER:add_event(Event({
-    trigger = 'ease',
-    blockable = false,
-    ref_table = card,
-    ref_value = 'dissolve',
-    ease_to = 1,
-    delay = 1 * dissolve_time,
-    func = (function(t) return t end)
-  }))
-  G.E_MANAGER:add_event(Event({
-    trigger = 'after',
-    blockable = false,
-    delay = 1.051 * dissolve_time,
-  }))
+  return create_card_for_shop_ref(area)
+end
+
+local game_start_run_ref = Game.start_run
+function Game:start_run(args)
+  game_start_run_ref(self, args)
+
+  args = args or {}
+
+  local saveTable = args.savetext or nil
+
+  if saveTable then
+    G.state_just_loaded = true
+  end
 end
 
 ----------------------------------------------
