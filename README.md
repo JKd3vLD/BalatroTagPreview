@@ -7,7 +7,7 @@
 ## Table of Contents
 
 - [About](#about)
-- [How to Download](#how_to_download)
+- [How to Install](#how_to_install)
 
 ## About <a name = "about"></a>
 
@@ -30,8 +30,8 @@ With it, you can see which Joker you will get when skipping a blind for the resp
 
 </div>
 
-## How to Download <a name = "how_to_download"></a>
+## How to Install <a name = "how_to_install"></a>
 
-- You will need Steamodded v0.9.8 or higher. It can be found [here](https://github.com/Steamopollys/Steamodded)
-- Download the latest release of Tag Preview
-- Extract the lua file in a new folder inside the Mods folder (example: %appdata%/Balatro/Mods/TagsPreview)
+- You will need Steamodded v0.9.8 or higher. [Steamodded](https://github.com/Steamopollys/Steamodded).
+- Download the latest release of Tag Preview.
+- Extract the lua file in a new folder inside the Mods folder (example: %appdata%/Balatro/Mods/TagsPreview).
